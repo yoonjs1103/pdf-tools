@@ -1,0 +1,226 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PDF Magic | Splitter, Merger & JPEG Converter</title>
+    <!-- Modern Typography -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <!-- PDF-Lib for client-side processing -->
+    <script src="lib/pdf-lib.min.js"></script>
+    <!-- PDF.js for rendering previews -->
+    <script src="lib/pdf.min.js"></script>
+    <script>
+        pdfjsLib.GlobalWorkerOptions.workerSrc = 'lib/pdf.worker.min.js';
+    </script>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div class="app-background">
+        <div class="gradient-sphere sphere-1"></div>
+        <div class="gradient-sphere sphere-2"></div>
+        <div class="gradient-sphere sphere-3"></div>
+    </div>
+
+    <div class="app-container">
+        <header>
+            <div class="logo">
+                <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="logo-icon"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg>
+                <span>PDF Magic</span>
+            </div>
+            <nav class="nav-tabs">
+                <button class="nav-btn active" data-tab="splitter">Split</button>
+                <button class="nav-btn" data-tab="merger">Merge</button>
+                <button class="nav-btn" data-tab="converter">PDF to JPEG</button>
+            </nav>
+        </header>
+
+        <main>
+            <!-- SPLITTER SECTION -->
+            <section id="splitter-section" class="tab-content active">
+                <div class="hero">
+                    <h1>Split PDF Pages</h1>
+                    <p>Extract specific pages or ranges from your PDF instantly and securely in your browser.</p>
+                </div>
+
+                <div class="glass-card upload-card" id="splitter-upload">
+                    <input type="file" id="split-file-input" accept="application/pdf" hidden>
+                    <div class="upload-area" id="split-drop-zone">
+                        <div class="icon-container">
+                            <svg class="upload-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg>
+                        </div>
+                        <h3>Drag & Drop your PDF here</h3>
+                        <p>or <button class="text-btn" onclick="document.getElementById('split-file-input').click()">browse files</button></p>
+                    </div>
+                </div>
+
+                <div class="glass-card action-card hidden" id="splitter-actions">
+                    <div class="file-info-header">
+                        <div class="file-details">
+                            <svg class="file-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline></svg>
+                            <div>
+                                <span class="file-name" id="split-file-name">filename.pdf</span>
+                                <span class="file-pages" id="split-file-pages">10 pages</span>
+                            </div>
+                        </div>
+                        <button class="icon-btn remove-btn" id="split-remove-btn" title="Remove file">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+                        </button>
+                    </div>
+
+                    <div class="preview-container">
+                        <h4>Page Preview</h4>
+                        <div class="preview-grid" id="split-preview-grid">
+                            <!-- Canvas previews inserted here via JS -->
+                        </div>
+                        <div class="pagination-controls hidden" id="preview-pagination">
+                            <button class="secondary-btn" id="prev-preview-btn" style="padding: 0.5rem 1rem;">Previous</button>
+                            <span class="page-indicator" id="preview-page-indicator">Page 1 of 1</span>
+                            <button class="secondary-btn" id="next-preview-btn" style="padding: 0.5rem 1rem;">Next</button>
+                        </div>
+                    </div>
+                    
+                    <div class="input-group">
+                        <label for="page-ranges">Pages to Extract</label>
+                        <input type="text" id="page-ranges" placeholder="e.g. 1-3, 5, 8-10">
+                        <span class="help-text">Leave empty to extract all pages as individual PDFs, or specify comma-separated ranges.</span>
+                    </div>
+
+                    <div class="action-footer">
+                        <div id="split-error" class="error-msg"></div>
+                        <button class="primary-btn" id="split-btn">
+                            <span class="btn-text">Split PDF</span>
+                            <div class="spinner hidden"></div>
+                        </button>
+                    </div>
+                </div>
+            </section>
+
+            <!-- MERGER SECTION -->
+            <section id="merger-section" class="tab-content">
+                <div class="hero">
+                    <h1>Merge Multiple PDFs</h1>
+                    <p>Combine multiple PDFs into a single document. Drag to reorder them as needed.</p>
+                </div>
+
+                <div class="glass-card upload-card" id="merger-upload">
+                    <input type="file" id="merge-file-input" accept="application/pdf" multiple hidden>
+                    <div class="upload-area" id="merge-drop-zone">
+                        <div class="icon-container">
+                            <svg class="upload-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg>
+                        </div>
+                        <h3>Drag & Drop PDFs here</h3>
+                        <p>or <button class="text-btn" onclick="document.getElementById('merge-file-input').click()">browse files</button></p>
+                    </div>
+                </div>
+
+                <div class="glass-card action-card hidden" id="merger-actions">
+                    <div class="file-list-header">
+                        <h3>Files to merge</h3>
+                        <span class="file-count" id="merge-file-count">0 files</span>
+                    </div>
+                    <ul class="file-list" id="merge-file-list">
+                        <!-- File items inserted here via JS -->
+                    </ul>
+                    <div class="actions-row">
+                        <button class="secondary-btn" onclick="document.getElementById('merge-file-input').click()">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+                            Add More
+                        </button>
+                        <button class="primary-btn" id="merge-btn">
+                            <span class="btn-text">Merge PDFs</span>
+                            <div class="spinner hidden"></div>
+                        </button>
+                    </div>
+                    <div id="merge-error" class="error-msg"></div>
+                </div>
+            </section>
+
+            <!-- PDF TO JPEG SECTION -->
+            <section id="converter-section" class="tab-content">
+                <div class="hero">
+                    <h1>Convert PDF to JPEG</h1>
+                    <p>Turn every PDF page into a high-quality JPEG image, securely in your browser.</p>
+                </div>
+
+                <div class="glass-card upload-card" id="converter-upload">
+                    <input type="file" id="convert-file-input" accept="application/pdf,.pdf" hidden>
+                    <div class="upload-area" id="convert-drop-zone">
+                        <div class="icon-container">
+                            <svg class="upload-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg>
+                        </div>
+                        <h3>Drag & Drop your PDF here</h3>
+                        <p>or <button class="text-btn" onclick="document.getElementById('convert-file-input').click()">browse files</button></p>
+                    </div>
+                </div>
+
+                <div class="glass-card action-card hidden" id="converter-actions">
+                    <div class="file-info-header">
+                        <div class="file-details">
+                            <svg class="file-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline></svg>
+                            <div>
+                                <span class="file-name" id="convert-file-name">filename.pdf</span>
+                                <span class="file-pages" id="convert-file-pages">1 page</span>
+                            </div>
+                        </div>
+                        <button class="icon-btn remove-btn" id="convert-remove-btn" title="Remove file">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+                        </button>
+                    </div>
+
+                    <div class="conversion-settings">
+                        <div class="input-group">
+                            <label for="jpeg-scale">Image resolution</label>
+                            <select id="jpeg-scale">
+                                <option value="1.5">Standard</option>
+                                <option value="2" selected>High</option>
+                                <option value="3">Very high</option>
+                            </select>
+                        </div>
+                        <div class="input-group">
+                            <label for="jpeg-quality">JPEG quality</label>
+                            <select id="jpeg-quality">
+                                <option value="0.8">80%</option>
+                                <option value="0.9" selected>90%</option>
+                                <option value="1">100%</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <div class="action-footer">
+                        <div id="convert-error" class="error-msg"></div>
+                        <button class="primary-btn" id="convert-btn">
+                            <span class="btn-text">Convert to JPEG</span>
+                            <div class="spinner hidden"></div>
+                        </button>
+                    </div>
+                </div>
+            </section>
+        </main>
+    </div>
+
+    <!-- Detailed View Modal -->
+    <div id="preview-modal" class="modal hidden">
+        <div class="modal-content glass-card">
+            <span class="close-modal" id="close-modal">&times;</span>
+            <div class="modal-header" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem; padding-right: 2rem;">
+                <h3 id="modal-page-num" style="margin: 0;">Page Preview</h3>
+                <div class="modal-nav-controls" style="display: flex; gap: 0.5rem;">
+                    <button class="secondary-btn" id="modal-prev-btn" style="padding: 0.25rem 0.75rem;">&lt; Prev</button>
+                    <button class="secondary-btn" id="modal-next-btn" style="padding: 0.25rem 0.75rem;">Next &gt;</button>
+                </div>
+            </div>
+            <div class="modal-body">
+                <div id="modal-spinner" class="spinner hidden" style="margin: auto;"></div>
+                <canvas id="modal-canvas" class="hidden"></canvas>
+            </div>
+        </div>
+    </div>
+
+    <!-- Simple drag-and-drop reordering library (SortableJS) -->
+    <script src="lib/Sortable.min.js"></script>
+    <script src="app.js"></script>
+</body>
+</html>
