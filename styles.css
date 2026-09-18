@@ -308,6 +308,16 @@ header {
     color: var(--danger);
 }
 
+.icon-btn:disabled {
+    cursor: not-allowed;
+    opacity: 0.35;
+}
+
+.icon-btn:disabled:hover {
+    background: transparent;
+    color: var(--text-muted);
+}
+
 .icon-btn svg {
     width: 20px;
     height: 20px;
@@ -587,15 +597,6 @@ input[type="text"]:focus, select:focus {
         gap: 0;
     }
 
-    .preview-heading {
-        align-items: flex-start;
-        flex-direction: column;
-        gap: 0.35rem;
-    }
-
-    .preview-selection-hint {
-        text-align: left;
-    }
 }
 
 /* PDF Preview Grid */
@@ -709,6 +710,18 @@ input[type="text"]:focus, select:focus {
     margin-top: 0.5rem;
     font-size: 0.75rem;
     color: var(--text-muted);
+}
+
+@media (max-width: 640px) {
+    .preview-heading {
+        align-items: flex-start;
+        flex-direction: column;
+        gap: 0.35rem;
+    }
+
+    .preview-selection-hint {
+        text-align: left;
+    }
 }
 
 /* Modal */

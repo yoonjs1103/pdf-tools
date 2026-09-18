@@ -38,6 +38,9 @@ let currentPdfJsDoc = null;
 let currentPreviewLoadingTask = null;
 let currentModalPageNum = 1;
 let previewSession = 0;
+let previewRenderGeneration = 0;
+let modalRenderGeneration = 0;
+let currentModalRenderTask = null;
 let splitPageCount = 0;
 const selectedSplitPages = new Set();
 
@@ -191,6 +194,7 @@ const updateProgress = (container, text, track, bar, current, total, action) => 
 
 const releaseCurrentPreviewDocument = async () => {
     previewSession += 1;
+    previewRenderGeneration += 1;
     const loadingTask = currentPreviewLoadingTask;
     const pdfDocument = currentPdfJsDoc;
     currentPreviewLoadingTask = null;
@@ -205,15 +209,22 @@ const releaseCurrentPreviewDocument = async () => {
 // --- SPLITTER LOGIC ---
 
 const handleSplitFile = async (file) => {
+    if (splitBtn.disabled) {
+        splitFileInput.value = '';
+        return;
+    }
+
     if (file.type !== 'application/pdf') {
         splitError.textContent = 'Please select a valid PDF file.';
         return;
     }
     splitError.textContent = '';
     resetProgress(splitProgress, splitProgressText, splitProgressTrack, splitProgressBar);
+    closePreviewModal();
     await releaseCurrentPreviewDocument();
     selectedSplitPages.clear();
     splitPageCount = 0;
+    pageRangesInput.value = '';
     
     try {
         splitFile = file;
@@ -262,6 +273,7 @@ splitDropZone.addEventListener('drop', (e) => {
 });
 
 splitRemoveBtn.addEventListener('click', async () => {
+    closePreviewModal();
     await releaseCurrentPreviewDocument();
     splitFile = null;
     splitFileBuffer = null;
@@ -273,9 +285,6 @@ splitRemoveBtn.addEventListener('click', async () => {
     resetProgress(splitProgress, splitProgressText, splitProgressTrack, splitProgressBar);
     splitPreviewGrid.innerHTML = ''; // Clear previews
     previewPagination.classList.add('hidden'); // Hide pagination
-    previewModal.classList.add('hidden');
-    modalCanvas.width = 0;
-    modalCanvas.height = 0;
     splitterUploadCard.classList.remove('hidden');
     splitterActionsCard.classList.add('hidden');
 });
@@ -297,7 +306,12 @@ nextPreviewBtn.addEventListener('click', () => {
 });
 
 const renderPreviews = async (buffer, targetPage = 1) => {
-    const session = previewSession;
+    const documentSession = previewSession;
+    const renderGeneration = ++previewRenderGeneration;
+    const isStaleRender = () => (
+        documentSession !== previewSession ||
+        renderGeneration !== previewRenderGeneration
+    );
     splitPreviewGrid.innerHTML = '<div style="grid-column: 1/-1; text-align: center; color: var(--text-muted);">Generating previews...</div>';
     
     try {
@@ -312,16 +326,17 @@ const renderPreviews = async (buffer, targetPage = 1) => {
             currentPreviewLoadingTask = loadingTask;
             const pdfDocument = await loadingTask.promise;
 
-            if (session !== previewSession) {
+            if (isStaleRender()) {
+                if (currentPreviewLoadingTask === loadingTask) currentPreviewLoadingTask = null;
                 await pdfDocument.destroy();
                 return;
             }
 
             currentPdfJsDoc = pdfDocument;
-            currentPreviewLoadingTask = null;
+            if (currentPreviewLoadingTask === loadingTask) currentPreviewLoadingTask = null;
         }
 
-        if (session !== previewSession) return;
+        if (isStaleRender()) return;
         
         const totalPages = currentPdfJsDoc.numPages;
         const totalPreviewPages = Math.ceil(totalPages / previewsPerPage);
@@ -351,7 +366,10 @@ const renderPreviews = async (buffer, targetPage = 1) => {
         
         for (let pageNum = startPage; pageNum <= endPage; pageNum++) {
             const page = await currentPdfJsDoc.getPage(pageNum);
-            if (session !== previewSession) return;
+            if (isStaleRender()) {
+                page.cleanup();
+                return;
+            }
             
             // Create card
             const card = document.createElement('div');
@@ -403,7 +421,7 @@ const renderPreviews = async (buffer, targetPage = 1) => {
             
             await page.render(renderContext).promise;
             page.cleanup();
-            if (session !== previewSession) return;
+            if (isStaleRender()) return;
             
             // Label
             const label = document.createElement('span');
@@ -416,15 +434,50 @@ const renderPreviews = async (buffer, targetPage = 1) => {
             splitPreviewGrid.appendChild(card);
         }
     } catch (err) {
-        if (session !== previewSession) return;
+        if (isStaleRender()) return;
         currentPreviewLoadingTask = null;
         console.error('Error rendering previews:', err);
         splitPreviewGrid.innerHTML = '<div style="grid-column: 1/-1; color: var(--danger); text-align:center;">Failed to generate previews.</div>';
     }
 };
 
+const cancelCurrentModalRender = () => {
+    modalRenderGeneration += 1;
+    if (currentModalRenderTask) {
+        try {
+            currentModalRenderTask.cancel();
+        } catch (error) {
+            console.warn('Failed to cancel modal rendering cleanly:', error);
+        }
+        currentModalRenderTask = null;
+    }
+};
+
+const clearModalCanvas = () => {
+    modalCanvas.classList.add('hidden');
+    modalCanvas.width = 0;
+    modalCanvas.height = 0;
+};
+
+const closePreviewModal = () => {
+    cancelCurrentModalRender();
+    previewModal.classList.add('hidden');
+    modalSpinner.classList.add('hidden');
+    clearModalCanvas();
+};
+
 const openPreviewModal = async (pageNum) => {
-    if (!currentPdfJsDoc) return;
+    const pdfDocument = currentPdfJsDoc;
+    if (!pdfDocument) return;
+
+    cancelCurrentModalRender();
+    const renderGeneration = modalRenderGeneration;
+    const documentSession = previewSession;
+    const isStaleModalRender = () => (
+        renderGeneration !== modalRenderGeneration ||
+        documentSession !== previewSession ||
+        pdfDocument !== currentPdfJsDoc
+    );
     
     currentModalPageNum = pageNum;
     previewModal.classList.remove('hidden');
@@ -433,18 +486,25 @@ const openPreviewModal = async (pageNum) => {
     // Update navigation buttons state
     if (modalPrevBtn && modalNextBtn) {
         modalPrevBtn.disabled = pageNum <= 1;
-        modalNextBtn.disabled = pageNum >= currentPdfJsDoc.numPages;
+        modalNextBtn.disabled = pageNum >= pdfDocument.numPages;
         modalPrevBtn.style.opacity = modalPrevBtn.disabled ? '0.3' : '1';
         modalPrevBtn.style.cursor = modalPrevBtn.disabled ? 'not-allowed' : 'pointer';
         modalNextBtn.style.opacity = modalNextBtn.disabled ? '0.3' : '1';
         modalNextBtn.style.cursor = modalNextBtn.disabled ? 'not-allowed' : 'pointer';
     }
 
-    modalCanvas.classList.add('hidden');
+    clearModalCanvas();
     modalSpinner.classList.remove('hidden');
+
+    let page = null;
+    let renderTask = null;
     
     try {
-        const page = await currentPdfJsDoc.getPage(pageNum);
+        page = await pdfDocument.getPage(pageNum);
+        if (isStaleModalRender()) {
+            page.cleanup();
+            return;
+        }
         const ctx = modalCanvas.getContext('2d');
         
         // Render at a higher scale for detail (2.0)
@@ -459,20 +519,28 @@ const openPreviewModal = async (pageNum) => {
             viewport: viewport
         };
         
-        await page.render(renderContext).promise;
+        renderTask = page.render(renderContext);
+        currentModalRenderTask = renderTask;
+        await renderTask.promise;
         page.cleanup();
+        page = null;
+
+        if (isStaleModalRender()) return;
         
         modalSpinner.classList.add('hidden');
         modalCanvas.classList.remove('hidden');
     } catch (err) {
+        if (page) page.cleanup();
+        if (isStaleModalRender()) return;
         console.error('Modal render error:', err);
         modalSpinner.classList.add('hidden');
+        clearModalCanvas();
+    } finally {
+        if (currentModalRenderTask === renderTask) currentModalRenderTask = null;
     }
 };
 
-closeModal.addEventListener('click', () => {
-    previewModal.classList.add('hidden');
-});
+closeModal.addEventListener('click', closePreviewModal);
 
 if (modalPrevBtn) {
     modalPrevBtn.addEventListener('click', () => {
@@ -493,7 +561,7 @@ if (modalNextBtn) {
 // Close modal when clicking outside content
 previewModal.addEventListener('click', (e) => {
     if (e.target === previewModal) {
-        previewModal.classList.add('hidden');
+        closePreviewModal();
     }
 });
 
@@ -571,16 +639,20 @@ pageRangesInput.addEventListener('input', syncSelectionFromPageRangeInput);
 
 splitBtn.addEventListener('click', async () => {
     if (!splitFileBuffer) return;
+
+    const activeFile = splitFile;
+    const activeBuffer = splitFileBuffer;
+    const rangeStr = pageRangesInput.value;
     
     setLoading(splitBtn, true);
+    splitRemoveBtn.disabled = true;
     splitError.textContent = '';
     resetProgress(splitProgress, splitProgressText, splitProgressTrack, splitProgressBar);
     updateProgress(splitProgress, splitProgressText, splitProgressTrack, splitProgressBar, 0, 0, 'Preparing');
     
     try {
-        const sourcePdf = await PDFLib.PDFDocument.load(splitFileBuffer);
+        const sourcePdf = await PDFLib.PDFDocument.load(activeBuffer);
         const maxPages = sourcePdf.getPageCount();
-        const rangeStr = pageRangesInput.value;
         
         let indicesToExtract = [];
         try {
@@ -599,7 +671,7 @@ splitBtn.addEventListener('click', async () => {
                 const [copiedPage] = await newPdf.copyPages(sourcePdf, [i]);
                 newPdf.addPage(copiedPage);
                 const pdfBytes = await newPdf.save();
-                downloadBuffer(pdfBytes, `${splitFile.name.replace('.pdf', '')}_page_${i + 1}.pdf`);
+                downloadBuffer(pdfBytes, `${activeFile.name.replace(/\.pdf$/i, '')}_page_${i + 1}.pdf`);
                 updateProgress(splitProgress, splitProgressText, splitProgressTrack, splitProgressBar, i + 1, maxPages, 'Extracting');
             }
         } else {
@@ -617,12 +689,13 @@ splitBtn.addEventListener('click', async () => {
                 updateProgress(splitProgress, splitProgressText, splitProgressTrack, splitProgressBar, i + 1, indicesToExtract.length, 'Extracting');
             }
             const pdfBytes = await newPdf.save();
-            downloadBuffer(pdfBytes, `${splitFile.name.replace('.pdf', '')}_extracted.pdf`);
+            downloadBuffer(pdfBytes, `${activeFile.name.replace(/\.pdf$/i, '')}_extracted.pdf`);
         }
     } catch (error) {
         console.error(error);
         splitError.textContent = 'An error occurred while splitting the PDF.';
     } finally {
+        splitRemoveBtn.disabled = false;
         setLoading(splitBtn, false);
     }
 });
@@ -749,6 +822,11 @@ mergeBtn.addEventListener('click', async () => {
 const isPdfFile = (file) => file && (file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf'));
 
 const handleConvertFile = async (file) => {
+    if (convertBtn.disabled) {
+        convertFileInput.value = '';
+        return;
+    }
+
     if (!isPdfFile(file)) {
         convertError.textContent = 'Please select a valid PDF file.';
         return;
@@ -811,7 +889,11 @@ const canvasToBlob = (canvas, quality) => new Promise((resolve, reject) => {
 convertBtn.addEventListener('click', async () => {
     if (!convertFileBuffer || !convertFile) return;
 
+    const activeFile = convertFile;
+    const activeBuffer = convertFileBuffer;
+
     setLoading(convertBtn, true);
+    convertRemoveBtn.disabled = true;
     convertError.textContent = '';
     resetProgress(convertProgress, convertProgressText, convertProgressTrack, convertProgressBar);
     updateProgress(convertProgress, convertProgressText, convertProgressTrack, convertProgressBar, 0, 0, 'Preparing');
@@ -820,11 +902,11 @@ convertBtn.addEventListener('click', async () => {
     let loadingTask = null;
 
     try {
-        loadingTask = pdfjsLib.getDocument({ data: convertFileBuffer.slice(0), cMapUrl: 'lib/cmaps/', cMapPacked: true });
+        loadingTask = pdfjsLib.getDocument({ data: activeBuffer.slice(0), cMapUrl: 'lib/cmaps/', cMapPacked: true });
         pdfDoc = await loadingTask.promise;
         const scale = Number(jpegScale.value);
         const quality = Number(jpegQuality.value);
-        const baseName = convertFile.name.replace(/\.pdf$/i, '');
+        const baseName = activeFile.name.replace(/\.pdf$/i, '');
         updateProgress(convertProgress, convertProgressText, convertProgressTrack, convertProgressBar, 0, pdfDoc.numPages, 'Converting');
 
         for (let pageNumber = 1; pageNumber <= pdfDoc.numPages; pageNumber++) {
@@ -848,11 +930,17 @@ convertBtn.addEventListener('click', async () => {
         console.error(error);
         convertError.textContent = 'An error occurred while converting the PDF to JPEG.';
     } finally {
-        if (pdfDoc) {
-            await pdfDoc.destroy();
-        } else if (loadingTask) {
-            await loadingTask.destroy();
+        try {
+            if (pdfDoc) {
+                await pdfDoc.destroy();
+            } else if (loadingTask) {
+                await loadingTask.destroy();
+            }
+        } catch (cleanupError) {
+            console.warn('Failed to release conversion resources cleanly:', cleanupError);
+        } finally {
+            convertRemoveBtn.disabled = false;
+            setLoading(convertBtn, false);
         }
-        setLoading(convertBtn, false);
     }
 });
