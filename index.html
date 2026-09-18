@@ -71,7 +71,10 @@
                     </div>
 
                     <div class="preview-container">
-                        <h4>Page Preview</h4>
+                        <div class="preview-heading">
+                            <h4>Page Preview</h4>
+                            <span class="preview-selection-hint">Check pages to add them to the range.</span>
+                        </div>
                         <div class="preview-grid" id="split-preview-grid">
                             <!-- Canvas previews inserted here via JS -->
                         </div>
@@ -90,6 +93,12 @@
 
                     <div class="action-footer">
                         <div id="split-error" class="error-msg"></div>
+                        <div class="progress-container hidden" id="split-progress">
+                            <div class="progress-details" id="split-progress-text" aria-live="polite"></div>
+                            <div class="progress-track" id="split-progress-track" role="progressbar" aria-label="PDF extraction progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
+                                <div class="progress-bar" id="split-progress-bar"></div>
+                            </div>
+                        </div>
                         <button class="primary-btn" id="split-btn">
                             <span class="btn-text">Split PDF</span>
                             <div class="spinner hidden"></div>
@@ -191,6 +200,12 @@
 
                     <div class="action-footer">
                         <div id="convert-error" class="error-msg"></div>
+                        <div class="progress-container hidden" id="convert-progress">
+                            <div class="progress-details" id="convert-progress-text" aria-live="polite"></div>
+                            <div class="progress-track" id="convert-progress-track" role="progressbar" aria-label="JPEG conversion progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
+                                <div class="progress-bar" id="convert-progress-bar"></div>
+                            </div>
+                        </div>
                         <button class="primary-btn" id="convert-btn">
                             <span class="btn-text">Convert to JPEG</span>
                             <div class="spinner hidden"></div>
