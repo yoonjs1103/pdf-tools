@@ -412,6 +412,19 @@ input[type="text"]:focus, select:focus {
     margin-bottom: 1.5rem;
 }
 
+.conversion-summary {
+    margin-bottom: 1.5rem;
+}
+
+input[aria-invalid="true"] {
+    border-color: var(--danger);
+}
+
+select:disabled, input:disabled {
+    opacity: 0.7;
+    cursor: not-allowed;
+}
+
 .primary-btn, .secondary-btn {
     display: flex;
     align-items: center;
@@ -580,6 +593,15 @@ input[type="text"]:focus, select:focus {
 }
 
 @media (max-width: 640px) {
+    header {
+        flex-wrap: wrap;
+        gap: 1rem;
+    }
+
+    .nav-btn {
+        padding: 0.5rem 1rem;
+    }
+
     .app-container {
         padding: 1rem;
     }

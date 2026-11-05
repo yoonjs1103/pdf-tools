@@ -1,0 +1,41 @@
+{
+  "name": "elheif",
+  "version": "0.1.0",
+  "description": "A wasm heic image encoder and decoder library compiled from libheif, libde265 and kvazaar.",
+  "type": "module",
+  "main": "pkg/index.js",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/hpp2334/elheif"
+  },
+  "keywords": [
+    "heic",
+    "wasm",
+    "emscripten",
+    "libheif",
+    "libde265",
+    "kvazaar"
+  ],
+  "author": "hpp2334",
+  "license": "MIT",
+  "devDependencies": {
+    "@esm-bundle/chai": "4.3.4-fix.0",
+    "@types/node": "^20.14.2",
+    "@web/dev-server": "^0.4.5",
+    "@web/dev-server-esbuild": "^1.0.2",
+    "@web/test-runner": "^0.18.2",
+    "@web/test-runner-playwright": "^0.11.0",
+    "playwright": "^1.44.1",
+    "tsx": "^4.15.2"
+  },
+  "files": [
+    "pkg/**"
+  ],
+  "scripts": {
+    "build:native": "cmake -S . -B build-native -DCMAKE_BUILD_TYPE=Debug && cmake --build build-native --target elheif-test",
+    "build:wasm": "emcmake cmake -S . -B build -DEMSCRIPTEN=ON -DCMAKE_BUILD_TYPE=Release && cmake --build build --target elheif-wasm",
+    "build:js": "pnpm build:wasm &&  cp ./build/wasm/elheif-wasm.js ./pkg/elheif-wasm.js && node ./scripts/patch-js.mjs",
+    "test:native": "./build-native/tests/elheif-test",
+    "test:js": "web-test-runner"
+  }
+}

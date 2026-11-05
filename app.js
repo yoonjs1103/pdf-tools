@@ -4,6 +4,8 @@ let splitFileBuffer = null;
 let mergeFiles = []; // Array of { file, buffer, id }
 let convertFile = null;
 let convertFileBuffer = null;
+let convertPageCount = 0;
+let convertFileSession = 0;
 
 // UI Elements
 const tabs = document.querySelectorAll('.nav-btn');
@@ -62,7 +64,7 @@ const mergeFileCount = document.getElementById('merge-file-count');
 const mergeBtn = document.getElementById('merge-btn');
 const mergeError = document.getElementById('merge-error');
 
-// PDF to JPEG Elements
+// PDF to Image Elements
 const convertDropZone = document.getElementById('convert-drop-zone');
 const convertFileInput = document.getElementById('convert-file-input');
 const converterUploadCard = document.getElementById('converter-upload');
@@ -70,8 +72,15 @@ const converterActionsCard = document.getElementById('converter-actions');
 const convertFileName = document.getElementById('convert-file-name');
 const convertFilePages = document.getElementById('convert-file-pages');
 const convertRemoveBtn = document.getElementById('convert-remove-btn');
-const jpegScale = document.getElementById('jpeg-scale');
+const imageScale = document.getElementById('image-scale');
+const imageFormat = document.getElementById('image-format');
+const imageFormatHelp = document.getElementById('image-format-help');
+const jpegQualityGroup = document.getElementById('jpeg-quality-group');
 const jpegQuality = document.getElementById('jpeg-quality');
+const convertPageMode = document.getElementById('convert-page-mode');
+const convertPageRanges = document.getElementById('convert-page-ranges');
+const convertRangeGroup = document.getElementById('convert-range-group');
+const convertSelectionSummary = document.getElementById('convert-selection-summary');
 const convertBtn = document.getElementById('convert-btn');
 const convertError = document.getElementById('convert-error');
 const convertProgress = document.getElementById('convert-progress');
@@ -817,9 +826,67 @@ mergeBtn.addEventListener('click', async () => {
     }
 });
 
-// --- PDF TO JPEG LOGIC ---
+// --- PDF TO IMAGE LOGIC ---
 
 const isPdfFile = (file) => file && (file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf'));
+
+const imageFormats = {
+    jpeg: { label: 'JPEG', mimeType: 'image/jpeg', help: 'JPEG offers smaller files with adjustable quality.' },
+    png: { label: 'PNG', mimeType: 'image/png', help: 'PNG preserves image detail with lossless compression.' },
+    heif: { label: 'HEIF', mimeType: 'image/heif', help: 'HEIF uses HEVC compression. Encoding can take longer, and viewing requires a compatible app.' }
+};
+
+// Keep conversion validation strict: never silently skip or clamp requested pages.
+const getConversionPages = (mode, rangeText, pageCount) => {
+    if (mode === 'all') return Array.from({ length: pageCount }, (_, index) => index + 1);
+    if (!rangeText.trim()) throw new Error('Enter the page numbers or ranges to convert.');
+    const pages = new Set();
+    for (const part of rangeText.split(',')) {
+        const match = part.trim().match(/^(\d+)(?:\s*-\s*(\d+))?$/);
+        if (!match) throw new Error('Use page numbers or ranges such as 1-3, 5, 8-10.');
+        const start = Number(match[1]);
+        const end = match[2] === undefined ? start : Number(match[2]);
+        if (!Number.isSafeInteger(start) || !Number.isSafeInteger(end) || start < 1 || end > pageCount || start > pageCount || end < 1) {
+            throw new Error(`Page numbers must be between 1 and ${pageCount}.`);
+        }
+        if (start > end) throw new Error(`Invalid range ${part.trim()}: the first page must come before the last.`);
+        for (let page = start; page <= end; page++) pages.add(page);
+    }
+    return Array.from(pages).sort((a, b) => a - b);
+};
+
+const updateConversionSelection = () => {
+    convertRangeGroup.classList.toggle('hidden', convertPageMode.value === 'all');
+    convertPageRanges.removeAttribute('aria-invalid');
+    convertError.textContent = '';
+    resetProgress(convertProgress, convertProgressText, convertProgressTrack, convertProgressBar);
+    if (!convertPageCount) {
+        convertSelectionSummary.textContent = '';
+        return;
+    }
+    try {
+        const pages = getConversionPages(convertPageMode.value, convertPageRanges.value, convertPageCount);
+        convertSelectionSummary.textContent = `${pages.length} of ${convertPageCount} pages will be converted. One image is saved per page.`;
+    } catch (error) {
+        convertPageRanges.setAttribute('aria-invalid', 'true');
+        convertError.textContent = error.message;
+        convertSelectionSummary.textContent = 'Choose the pages you want to convert.';
+    }
+};
+
+const updateConversionFormat = () => {
+    const format = imageFormats[imageFormat.value];
+    jpegQualityGroup.classList.toggle('hidden', imageFormat.value !== 'jpeg');
+    jpegQuality.disabled = imageFormat.value !== 'jpeg';
+    imageFormatHelp.textContent = format.help;
+    convertBtn.querySelector('.btn-text').textContent = `Convert to ${format.label}`;
+    convertError.textContent = '';
+    resetProgress(convertProgress, convertProgressText, convertProgressTrack, convertProgressBar);
+};
+
+convertPageMode.addEventListener('change', updateConversionSelection);
+convertPageRanges.addEventListener('input', updateConversionSelection);
+imageFormat.addEventListener('change', updateConversionFormat);
 
 const handleConvertFile = async (file) => {
     if (convertBtn.disabled) {
@@ -834,24 +901,44 @@ const handleConvertFile = async (file) => {
 
     convertError.textContent = '';
     resetProgress(convertProgress, convertProgressText, convertProgressTrack, convertProgressBar);
+    const session = ++convertFileSession;
+    let loadingTask = null;
     try {
         const buffer = await readFileAsArrayBuffer(file);
-        const loadingTask = pdfjsLib.getDocument({ data: buffer.slice(0), cMapUrl: 'lib/cmaps/', cMapPacked: true });
+        if (session !== convertFileSession) return;
+        loadingTask = pdfjsLib.getDocument({ data: buffer.slice(0), cMapUrl: 'lib/cmaps/', cMapPacked: true });
         const pdfDoc = await loadingTask.promise;
         const pageCount = pdfDoc.numPages;
-        await pdfDoc.destroy();
+        if (session !== convertFileSession) return;
 
         convertFile = file;
         convertFileBuffer = buffer;
+        convertPageCount = pageCount;
+        convertPageMode.value = 'all';
+        convertPageRanges.value = '';
+        updateConversionSelection();
         convertFileName.textContent = file.name;
         convertFilePages.textContent = `${pageCount} page${pageCount === 1 ? '' : 's'} · ${formatBytes(file.size)}`;
         converterUploadCard.classList.add('hidden');
         converterActionsCard.classList.remove('hidden');
     } catch (error) {
+        if (session !== convertFileSession) return;
         console.error(error);
         convertError.textContent = 'Failed to load PDF. It might be encrypted or corrupted.';
         convertFile = null;
         convertFileBuffer = null;
+        convertPageCount = 0;
+        converterUploadCard.classList.remove('hidden');
+        converterActionsCard.classList.add('hidden');
+    } finally {
+        if (loadingTask) {
+            try {
+                await loadingTask.destroy();
+            } catch (error) {
+                console.warn('Failed to release PDF loading resources:', error);
+            }
+        }
+        if (session === convertFileSession) convertFileInput.value = '';
     }
 };
 
@@ -873,8 +960,14 @@ convertDropZone.addEventListener('drop', (e) => {
 });
 
 convertRemoveBtn.addEventListener('click', () => {
+    if (convertBtn.disabled) return;
+    convertFileSession += 1;
     convertFile = null;
     convertFileBuffer = null;
+    convertPageCount = 0;
+    convertPageMode.value = 'all';
+    convertPageRanges.value = '';
+    updateConversionSelection();
     convertFileInput.value = '';
     convertError.textContent = '';
     resetProgress(convertProgress, convertProgressText, convertProgressTrack, convertProgressBar);
@@ -882,54 +975,132 @@ convertRemoveBtn.addEventListener('click', () => {
     converterActionsCard.classList.add('hidden');
 });
 
-const canvasToBlob = (canvas, quality) => new Promise((resolve, reject) => {
-    canvas.toBlob(blob => blob ? resolve(blob) : reject(new Error('JPEG creation failed.')), 'image/jpeg', quality);
+const canvasToBlob = (canvas, mimeType, quality) => new Promise((resolve, reject) => {
+    canvas.toBlob(blob => {
+        if (!blob || blob.type !== mimeType) {
+            reject(new Error(`This browser could not create a ${mimeType} image.`));
+        } else {
+            resolve(blob);
+        }
+    }, mimeType, quality);
 });
+
+// Use a worker so HEIF encoding does not block the interface. Terminate it after
+// each conversion to release the WASM heap, including on initialization failures.
+const createHeifEncoder = () => {
+    let worker;
+    try {
+        worker = new Worker('heif-worker.js');
+    } catch {
+        throw new Error('HEIF encoding could not start. Open this app through a local web server and try again.');
+    }
+    let pending = null;
+    let workerError = null;
+    const fail = (error) => {
+        workerError = error;
+        if (pending) {
+            clearTimeout(pending.timeout);
+            pending.reject(error);
+            pending = null;
+        }
+    };
+    worker.onerror = (event) => {
+        event.preventDefault();
+        fail(new Error('HEIF encoding failed to load. Open this app through a local web server and try again.'));
+    };
+    worker.onmessageerror = () => fail(new Error('Could not read the HEIF encoder response. Please try again.'));
+    worker.onmessage = ({ data }) => {
+        if (!pending) return;
+        clearTimeout(pending.timeout);
+        if (data.error) pending.reject(new Error(data.error));
+        else pending.resolve(data.buffer);
+        pending = null;
+    };
+    return {
+        encode(imageData) {
+            if (workerError) return Promise.reject(workerError);
+            return new Promise((resolve, reject) => {
+                pending = { resolve, reject, timeout: setTimeout(() => fail(new Error('HEIF encoding took too long. Try a lower image resolution.')), 180000) };
+                try {
+                    worker.postMessage({ pixels: imageData.data.buffer, width: imageData.width, height: imageData.height }, [imageData.data.buffer]);
+                } catch (error) {
+                    fail(error);
+                }
+            });
+        },
+        destroy() {
+            fail(new Error('HEIF encoding stopped.'));
+            worker.terminate();
+        }
+    };
+};
 
 convertBtn.addEventListener('click', async () => {
     if (!convertFileBuffer || !convertFile) return;
 
     const activeFile = convertFile;
     const activeBuffer = convertFileBuffer;
+    const formatKey = imageFormat.value;
+    const format = imageFormats[formatKey];
+    let pageNumbers;
+    try {
+        pageNumbers = getConversionPages(convertPageMode.value, convertPageRanges.value, convertPageCount);
+    } catch (error) {
+        convertError.textContent = error.message;
+        convertPageRanges.setAttribute('aria-invalid', 'true');
+        convertPageRanges.focus();
+        return;
+    }
 
     setLoading(convertBtn, true);
     convertRemoveBtn.disabled = true;
+    const settings = [convertPageMode, convertPageRanges, imageFormat, imageScale, jpegQuality];
+    settings.forEach(control => { control.disabled = true; });
     convertError.textContent = '';
     resetProgress(convertProgress, convertProgressText, convertProgressTrack, convertProgressBar);
     updateProgress(convertProgress, convertProgressText, convertProgressTrack, convertProgressBar, 0, 0, 'Preparing');
 
     let pdfDoc = null;
     let loadingTask = null;
+    let heifEncoder = null;
 
     try {
         loadingTask = pdfjsLib.getDocument({ data: activeBuffer.slice(0), cMapUrl: 'lib/cmaps/', cMapPacked: true });
         pdfDoc = await loadingTask.promise;
-        const scale = Number(jpegScale.value);
+        const scale = Number(imageScale.value);
         const quality = Number(jpegQuality.value);
         const baseName = activeFile.name.replace(/\.pdf$/i, '');
-        updateProgress(convertProgress, convertProgressText, convertProgressTrack, convertProgressBar, 0, pdfDoc.numPages, 'Converting');
+        if (formatKey === 'heif') heifEncoder = createHeifEncoder();
+        updateProgress(convertProgress, convertProgressText, convertProgressTrack, convertProgressBar, 0, pageNumbers.length, 'Converting');
 
-        for (let pageNumber = 1; pageNumber <= pdfDoc.numPages; pageNumber++) {
+        for (const [index, pageNumber] of pageNumbers.entries()) {
             const page = await pdfDoc.getPage(pageNumber);
-            const viewport = page.getViewport({ scale });
             const canvas = document.createElement('canvas');
-            canvas.width = Math.ceil(viewport.width);
-            canvas.height = Math.ceil(viewport.height);
-            const context = canvas.getContext('2d', { alpha: false });
-            context.fillStyle = '#ffffff';
-            context.fillRect(0, 0, canvas.width, canvas.height);
-            await page.render({ canvasContext: context, viewport, background: '#ffffff' }).promise;
-            const jpegBlob = await canvasToBlob(canvas, quality);
-            downloadBlob(jpegBlob, `${baseName}_page_${pageNumber}.jpeg`);
-            canvas.width = 0;
-            canvas.height = 0;
-            page.cleanup();
-            updateProgress(convertProgress, convertProgressText, convertProgressTrack, convertProgressBar, pageNumber, pdfDoc.numPages, 'Converting');
+            try {
+                const viewport = page.getViewport({ scale });
+                canvas.width = Math.ceil(viewport.width);
+                canvas.height = Math.ceil(viewport.height);
+                const context = canvas.getContext('2d', { alpha: false });
+                if (!context || !canvas.width || !canvas.height) throw new Error('Unable to render this page. Try a lower image resolution.');
+                context.fillStyle = '#ffffff';
+                context.fillRect(0, 0, canvas.width, canvas.height);
+                await page.render({ canvasContext: context, viewport, background: '#ffffff' }).promise;
+                const blob = heifEncoder
+                    ? new Blob([await heifEncoder.encode(context.getImageData(0, 0, canvas.width, canvas.height))], { type: format.mimeType })
+                    : await canvasToBlob(canvas, format.mimeType, quality);
+                downloadBlob(blob, `${baseName}_page_${pageNumber}.${formatKey}`);
+                updateProgress(convertProgress, convertProgressText, convertProgressTrack, convertProgressBar, index + 1, pageNumbers.length, 'Converting');
+            } finally {
+                canvas.width = 0;
+                canvas.height = 0;
+                page.cleanup();
+            }
         }
     } catch (error) {
         console.error(error);
-        convertError.textContent = 'An error occurred while converting the PDF to JPEG.';
+        convertError.textContent = `Could not finish converting to ${format.label}. ${error.message || 'Please try again.'}`;
     } finally {
+        if (heifEncoder) heifEncoder.destroy();
         try {
             if (pdfDoc) {
                 await pdfDoc.destroy();
@@ -940,6 +1111,8 @@ convertBtn.addEventListener('click', async () => {
             console.warn('Failed to release conversion resources cleanly:', cleanupError);
         } finally {
             convertRemoveBtn.disabled = false;
+            settings.forEach(control => { control.disabled = false; });
+            jpegQuality.disabled = formatKey !== 'jpeg';
             setLoading(convertBtn, false);
         }
     }
